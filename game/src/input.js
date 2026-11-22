@@ -75,4 +75,8 @@ export const KEYS = {
   handbrake: ['KeyC'],
   // Look behind: the camera swings round to the back of the car.
   lookBack: ['KeyB'],
+  // Pause: the world freezes on the spot, the HUD stays up, and P again picks it
+  // back up. It only counts in the middle of a game, never on the title card or
+  // after a WASTED.
+  pause: ['KeyP'],
 };

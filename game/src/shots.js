@@ -6,12 +6,12 @@ export const SHOTS = {
   start: {
     name: '1-start',
     title: 'The title card of Sunset City at dusk',
-    note: 'title screen over the sunset sky',
+    note: 'the title screen over the painted sunset sky and the bay',
   },
   play: {
     name: '2-play',
     title: 'On foot in the middle of the city',
-    note: 'the player on the pavement with traffic on the road',
+    note: 'the player on the pavement with traffic on the road and gulls over the bay',
   },
   mission: {
     name: '4-mission',
@@ -21,7 +21,7 @@ export const SHOTS = {
   end: {
     name: '3-end',
     title: 'A police chase at three wanted stars',
-    note: 'police cars closing in on the player, with the speedometer lit',
+    note: 'police cars closing in on the player, with the speedometer and the nitro bar lit',
   },
 };
 

@@ -39,6 +39,24 @@ export const roadCol = (c) => ({ x: roadX(c), y: 0, w: CITY.road, h: WORLD.heigh
 /** The road rectangle of row r (horizontal carriageway). */
 export const roadRow = (r) => ({ x: 0, y: roadY(r), w: WORLD.width, h: CITY.road });
 
+/**
+ * The named place nearest a point, or null when the world has none. The job
+ * board uses it to keep a fare's drop-off a short hop from its pickup instead
+ * of sending it across the whole city.
+ */
+export function nearestLandmark(world, x, y) {
+  let best = null;
+  let bestD = Infinity;
+  for (const l of world.landmarks) {
+    const d = (l.x - x) * (l.x - x) + (l.y - y) * (l.y - y);
+    if (d < bestD) {
+      bestD = d;
+      best = l;
+    }
+  }
+  return best;
+}
+
 export function buildWorld(seed = 20261124) {
   const rand = makeRandom(seed);
   const tiles = new Uint8Array(CITY.cols * CITY.rows);
@@ -159,7 +177,8 @@ export function buildWorld(seed = 20261124) {
 
   const phone = { x: WORLD.width * 0.5 + 120, y: boardwalkY + 30 };
 
-  // Named places, used by the missions and the minimap.
+  // Named places, used by the missions and the minimap. Marina Steps sits at the
+  // west end of the beach, where the boardwalk meets the water.
   const landmarks = [
     { name: 'Boardwalk', x: phone.x, y: phone.y },
     { name: 'Dockside Lot', x: roadX(2) + 200, y: roadY(8) + 240 },
@@ -167,6 +186,7 @@ export function buildWorld(seed = 20261124) {
     { name: 'Neon Square', x: roadX(4) + CITY.road + 210, y: roadY(3) + CITY.road + 210 },
     { name: 'Park Gate', x: roadX(6) + CITY.road + 90, y: roadY(5) + CITY.road + 90 },
     { name: 'Garage Row', x: roadX(8) + CITY.road + 250, y: roadY(6) + CITY.road + 120 },
+    { name: 'Marina Steps', x: roadX(1) + CITY.road + 140, y: boardwalkY - 90 },
   ];
 
   // The stash the heist job points at: a cash case behind the pier shed.

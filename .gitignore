@@ -8,7 +8,11 @@ shots-src/.chrome-profile/
 node_modules/
 *.log
 
-# The editor's swap and backup files.
+# The editor's swap and backup files, and anything a merge left behind.
 *.swp
+*.orig
 *~
 .DS_Store
+
+# Local tooling caches that never belong in an entry.
+.cache/

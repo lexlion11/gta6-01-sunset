@@ -127,6 +127,17 @@ export function stepCar(car, dt, throttle, steerInput, opts = {}) {
   return car;
 }
 
+/**
+ * Applies damage to a car and reports whether the hit wrecked it: hp at or below
+ * zero means the car is out of the fight and the caller should retire it. Keeping
+ * the check beside the hp field means every place that hurts a car agrees on what
+ * "wrecked" means.
+ */
+export function applyDamage(car, amount) {
+  car.hp = (car.hp ?? 100) - amount;
+  return car.hp <= 0;
+}
+
 /** The corners of a car's box in world space, for drawing and collision. */
 export function carCorners(car) {
   const t = car.type;

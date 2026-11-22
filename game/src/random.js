@@ -44,6 +44,8 @@ export function makeRandom(seed) {
     }
     return copy;
   };
+  /** A heading in radians, spread evenly over the full turn. */
+  next.angle = () => next() * Math.PI * 2;
   return next;
 }
 
@@ -62,4 +64,9 @@ export function pickWeighted(pairs, rng = Math.random) {
     if (roll < 0) return value;
   }
   return usable[usable.length - 1][0];
+}
+
+/** A heading in radians from any random source, spread evenly over the full turn. */
+export function randomAngle(rng = Math.random) {
+  return rng() * Math.PI * 2;
 }

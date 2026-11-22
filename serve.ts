@@ -37,7 +37,7 @@ const MIME: Record<string, string> = {
   '.txt': 'text/plain; charset=utf-8',
 };
 
-createServer((request, response) => {
+const server = createServer((request, response) => {
   const url = new URL(request.url ?? '/', 'http://localhost');
   let pathname: string;
   try {
@@ -68,6 +68,16 @@ createServer((request, response) => {
     'cache-control': 'no-store',
   });
   createReadStream(file).pipe(response);
-}).listen(port, '127.0.0.1', () => {
-  console.log(`game/ is on http://localhost:${port}`);
 });
+
+server.listen(port, '127.0.0.1', () => {
+  console.log(`Sunset City is on http://localhost:${port} (Ctrl-C to stop)`);
+});
+
+// Stop the listener on a signal rather than letting the OS tear it down, so a
+// Ctrl-C in a terminal never leaves the port half-closed.
+const close = () => {
+  server.close(() => process.exit(0));
+};
+process.on('SIGINT', close);
+process.on('SIGTERM', close);

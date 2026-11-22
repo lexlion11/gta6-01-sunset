@@ -38,6 +38,10 @@ const SHOTS = [
 const outDir = resolve(process.argv[2] ?? join(ROOT, 'screenshots'));
 mkdirSync(outDir, { recursive: true });
 
+// The bytes handed in across all four shots, so the run ends with its own total
+// and a runaway picture is caught at capture time rather than at submission.
+let shotBytes = 0;
+
 const chrome = spawn(CHROME, [
   '--headless=new',
   '--no-sandbox',
@@ -169,8 +173,11 @@ for (const shot of SHOTS) {
     throw new Error(`${shot.out} is ${buffer.length} bytes, over the ${MAX_BYTES} the scorer allows`);
   }
   writeFileSync(join(outDir, shot.out), buffer);
+  shotBytes += buffer.length;
   console.log(`${shot.out}: ${buffer.length} bytes` + (errors.length ? `  ERRORS: ${errors.join(' | ')}` : ''));
 }
+
+console.log(`${SHOTS.length} shots, ${shotBytes} bytes total (cap: ${MAX_BYTES * SHOTS.length} across the set)`);
 
 await browser.send('Target.closeTarget', { targetId });
 chrome.kill('SIGTERM');

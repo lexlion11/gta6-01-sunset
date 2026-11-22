@@ -6,8 +6,10 @@
 <style>
   html, body { margin: 0; padding: 0; background: #14161f; overflow: hidden; }
   /* The canvas is 1280x800 and the page is exactly that big, so a capture of the
-     page's viewport is the game's own frame with nothing cropped and nothing added. */
+     page's viewport is the game's own frame with nothing cropped and nothing added.
+     The body is kept dark so no page background can bleed in at the edges. */
   #game { position: absolute; top: 0; left: 0; width: 1280px; height: 800px; display: block; }
+  body { background: #14161f; }
 </style>
 </head>
 <body>

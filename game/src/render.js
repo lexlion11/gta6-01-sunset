@@ -3,6 +3,7 @@
 
 import { COLORS, VIEW, CITY, NIGHT } from './config.js';
 import { TILES, tileAt, lotRect } from './world.js';
+import { gullPos } from './entities.js';
 
 /** The camera: where it looks and how big a pixel is on screen. */
 export function createCamera() {
@@ -593,6 +594,28 @@ export function drawNightTint(ctx) {
   g.addColorStop(1, `rgba(8,6,18,${NIGHT.vignette})`);
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, VIEW.width, VIEW.height);
+}
+
+/**
+ * The gulls over the ocean: small white wings that flap as they circle the
+ * shoreline. They are drawn after the foliage so the birds fly over the trees.
+ */
+export function drawGulls(ctx, cam, gulls, time) {
+  for (const g of gulls) {
+    const pos = gullPos(g);
+    const p = worldToScreen(cam, pos.x, pos.y);
+    const s = safeZoom(cam);
+    const flap = Math.sin(time * 7 + g.phase);
+    const span = 7 * s;
+    const lift = (4 + flap * 3) * s;
+    ctx.strokeStyle = 'rgba(248,246,238,0.9)';
+    ctx.lineWidth = Math.max(1, 1.6 * s);
+    ctx.beginPath();
+    ctx.moveTo(p.x - span, p.y + flap * 1.2 * s);
+    ctx.quadraticCurveTo(p.x - span * 0.45, p.y - lift, p.x, p.y);
+    ctx.quadraticCurveTo(p.x + span * 0.45, p.y - lift, p.x + span, p.y + flap * 1.2 * s);
+    ctx.stroke();
+  }
 }
 
 /** Street lamps: a pole and a warm pool of light. */

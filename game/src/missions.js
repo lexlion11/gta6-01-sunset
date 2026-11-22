@@ -1,7 +1,7 @@
 // The job system. The phone on the boardwalk hands out work; each job is a small
 // objective the player has to finish before the next one appears.
 
-import { WORLD } from './world.js';
+import { WORLD, nearestLandmark } from './world.js';
 import { HEIST } from './config.js';
 
 export const JOB_KINDS = {
@@ -10,7 +10,26 @@ export const JOB_KINDS = {
   ESCAPE: 'escape',
   HIT: 'hit',
   HEIST: 'heist',
+  TAXI: 'taxi',
 };
+
+/**
+ * The landmark nearest a point, skipping the one given: used to keep a fare's
+ * drop-off a short hop from its pickup rather than a crossing of the whole city.
+ */
+function nearestOther(world, x, y, skip) {
+  let best = null;
+  let bestD = Infinity;
+  for (const l of world.landmarks) {
+    if (l === skip) continue;
+    const d = (l.x - x) * (l.x - x) + (l.y - y) * (l.y - y);
+    if (d < bestD) {
+      bestD = d;
+      best = l;
+    }
+  }
+  return best ?? nearestLandmark(world, x, y);
+}
 
 /** A job the phone can offer. */
 function makeJob(kind, index, world) {
@@ -74,6 +93,24 @@ function makeJob(kind, index, world) {
       done: false,
     };
   }
+  if (kind === JOB_KINDS.TAXI) {
+    // The taxi run has two halves too: reach the fare wherever it is waiting, then
+    // drive it across town. Any car will do - the fare does not care what it is
+    // riding in, only that it shows up.
+    const pickup = world.landmarks[(index + 1) % world.landmarks.length];
+    const drop = nearestOther(world, pickup.x, pickup.y, pickup);
+    return {
+      kind,
+      title: 'Taxi run',
+      detail: 'Pick up the fare at the marker, then drive them to the drop-off',
+      phase: 'pickup',
+      marker: { x: pickup.x, y: pickup.y },
+      fare: { x: pickup.x, y: pickup.y },
+      dropoff: { x: drop.x, y: drop.y },
+      reward: 800 + index * 110,
+      done: false,
+    };
+  }
   const l = world.landmarks[(index + 2) % world.landmarks.length];
   return {
     kind,
@@ -89,6 +126,7 @@ function makeJob(kind, index, world) {
 export function createJobBoard(world) {
   const order = [
     JOB_KINDS.DELIVER,
+    JOB_KINDS.TAXI,
     JOB_KINDS.CHECKPOINT,
     JOB_KINDS.HIT,
     JOB_KINDS.ESCAPE,
@@ -114,6 +152,9 @@ export function markerOf(job) {
   if (job.kind === JOB_KINDS.CHECKPOINT) return job.checkpoints[job.index] ?? null;
   if (job.kind === JOB_KINDS.HEIST) {
     return job.phase === 'lift' ? job.marker : { x: job.safehouse.x, y: job.safehouse.y };
+  }
+  if (job.kind === JOB_KINDS.TAXI) {
+    return job.phase === 'pickup' ? job.marker : job.dropoff;
   }
   return job.marker ?? null;
 }
@@ -168,6 +209,27 @@ export function checkJob(job, state) {
     }
     return false;
   }
+  if (job.kind === JOB_KINDS.TAXI) {
+    if (job.phase === 'pickup') {
+      // The fare is met wherever the player finds it: on foot or behind the wheel.
+      const dx = state.playerX - job.fare.x;
+      const dy = state.playerY - job.fare.y;
+      if (dx * dx + dy * dy < 60 * 60) {
+        job.phase = 'dropoff';
+        job.detail = 'Drive the fare to the drop-off';
+        job.marker = job.dropoff;
+      }
+      return false;
+    }
+    // The second half: the fare rides, so the player has to be in a car.
+    const dx = state.playerX - job.dropoff.x;
+    const dy = state.playerY - job.dropoff.y;
+    if (dx * dx + dy * dy < 80 * 80 && state.inCar) {
+      job.done = true;
+      return true;
+    }
+    return false;
+  }
   const m = job.marker;
   if (!m) return false;
   const dx = state.playerX - m.x;
@@ -190,6 +252,10 @@ export function objectiveText(job) {
   if (job.kind === JOB_KINDS.HEIST) {
     if (job.phase === 'lift') return { title: job.title, sub: 'On foot: the case is behind the pier' };
     return { title: 'Run the case', sub: 'Get in the Nightjar and reach the safe house' };
+  }
+  if (job.kind === JOB_KINDS.TAXI) {
+    if (job.phase === 'pickup') return { title: job.title, sub: 'The fare is at the marker' };
+    return { title: 'Taxi run', sub: 'Any car: drive the fare to the drop-off' };
   }
   return { title: job.title, sub: job.detail };
 }

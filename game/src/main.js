@@ -1,23 +1,23 @@
 // Sunset City: the game itself. A 2D top-down open-world crime game drawn with
 // canvas primitives, with no library, no build step and no network request.
 
-import { VIEW, COLORS, PHYSICS, WANTED, TRAFFIC, HEIST } from './config.js';
+import { VIEW, COLORS, PHYSICS, WANTED, TRAFFIC, HEIST, GULLS } from './config.js';
 import { createInput, KEYS } from './input.js';
 import { buildWorld, roadX, roadY, tileAt, TILES } from './world.js';
 import {
   createCamera, updateCamera, worldToScreen, screenToWorld,
   drawSky, drawGround, drawBoardwalk, drawBuildings, drawFoliage, drawProps,
   drawCar, drawPerson, drawBullet, drawMarker, drawPhone, drawLamps,
-  drawStash, drawHorn, drawNightTint,
+  drawStash, drawHorn, drawNightTint, drawGulls,
 } from './render.js';
 import {
   drawObjective, drawStatus, drawMinimap, drawTitle, drawBanner, drawToast,
-  drawFloatText, drawTitleScene, drawSpeedometer, drawStreak,
+  drawFloatText, drawTitleScene, drawSpeedometer, drawStreak, drawPause,
 } from './hud.js';
-import { makeCar, stepCar, carType, overlaps, speedReadout } from './vehicles.js';
+import { makeCar, stepCar, carType, overlaps, speedReadout, applyDamage } from './vehicles.js';
 import {
   spawnPedestrians, stepPed, makeTrafficCar, stepTraffic, makeCop, stepCop,
-  bulletHitsPerson, bulletHitsCar, panicTraffic, confuseCop,
+  bulletHitsPerson, bulletHitsCar, panicTraffic, confuseCop, spawnGulls, stepGulls,
 } from './entities.js';
 import {
   createJobBoard, markerOf, checkJob, objectiveText, JOB_KINDS, completionBonus,
@@ -58,6 +58,7 @@ const state = {
   boosting: false,
   lookBack: false,
   chase: 0,            // how long the police have been on the tail
+  paused: false,       // P holds the world still; the draw still runs under it
 };
 
 const player = {
@@ -72,6 +73,8 @@ const player = {
 };
 
 const peds = spawnPedestrians(world, TRAFFIC.pedestrians);
+// The gulls that circle over the water at the south edge of the map.
+const gulls = spawnGulls(world, GULLS.count);
 const traffic = [];
 const cops = [];
 const bullets = [];
@@ -309,6 +312,9 @@ function completeJob() {
 // ---------------------------------------------------------------- the update
 
 function update(dt) {
+  // Parsed but frozen: the frame still draws (so the pause overlay has the world
+  // behind it) but the clock and everything on it stand still.
+  if (state.paused) return;
   state.time += dt;
   state.flash = Math.max(0, state.flash - dt * 2);
   updateHorn(dt);
@@ -351,9 +357,9 @@ function update(dt) {
       && (throttle > 0 || car.speed > 60);
     state.boosting = wantsBoost;
     if (wantsBoost) {
-      state.nitro = Math.max(0, state.nitro - dt * 0.4);
+      state.nitro = Math.max(0, state.nitro - dt * PHYSICS.nitroDrain);
     } else {
-      state.nitro = Math.min(1, state.nitro + dt * 0.06);
+      state.nitro = Math.min(1, state.nitro + dt * PHYSICS.nitroRefill);
     }
     stepCar(car, dt, throttle, steer, { handbrake, boost: wantsBoost });
     // stay on the map
@@ -381,8 +387,7 @@ function update(dt) {
       if (overlaps(car.x, car.y, car.radius, cop.x, cop.y, cop.radius)) {
         if (Math.abs(car.speed) > 120) {
           raiseWanted(1);
-          cop.hp -= 40;
-          if (cop.hp <= 0) {
+          if (applyDamage(cop, 40)) {
             cops.splice(cops.indexOf(cop), 1);
             floatText(cop.x, cop.y, '+$300', COLORS.money);
             state.money += 300;
@@ -455,8 +460,7 @@ function update(dt) {
     if (!hit) {
       for (const car of [...traffic, ...parkedCars, ...cops]) {
         if (bulletHitsCar(b, car)) {
-          car.hp -= 25;
-          if (car.hp <= 0 && car !== state.inCar) {
+          if (applyDamage(car, 25) && car !== state.inCar) {
             const list = traffic.includes(car) ? traffic : (parkedCars.includes(car) ? parkedCars : cops);
             list.splice(list.indexOf(car), 1);
             floatText(car.x, car.y, '+$200', COLORS.money);
@@ -473,7 +477,7 @@ function update(dt) {
   // pedestrians
   const danger = state.wanted > 0 || bullets.length > 0;
   for (const p of peds) {
-    stepPed(p, dt, p.target ?? { x: p.x + Math.cos(p.walkPhase) * 200, y: p.y + Math.sin(p.walkPhase) * 200 }, player, danger);
+    stepPed(p, dt, p.target ?? { x: p.x + Math.cos(p.walkPhase) * 200, y: p.y + Math.sin(p.walkPhase) * 200 }, player, danger, world.sandTop - 16);
     // walk around the pavements: if a pedestrian wanders onto a road, give it a new goal
     if (p.target === undefined || Math.hypot(p.target.x - p.x, p.target.y - p.y) < 20) {
       const c = Math.floor(Math.random() * 11);
@@ -501,6 +505,9 @@ function update(dt) {
       traffic.splice(i, 1);
     }
   }
+
+  // the gulls work the shoreline whatever the city is doing
+  stepGulls(gulls, dt, world);
 
   // police
   for (let i = cops.length - 1; i >= 0; i--) {
@@ -558,6 +565,7 @@ function update(dt) {
       playerX: player.x,
       playerY: player.y,
       wanted: state.wanted,
+      inCar: !!state.inCar,
       inTargetCar: state.inCar && state.inCar.type.id === state.job.carId,
     });
     if (finished) completeJob();
@@ -610,6 +618,8 @@ function draw() {
   drawBuildings(ctx, cam, world, state.time);
   drawProps(ctx, cam, world);
   drawFoliage(ctx, cam, world);
+  // the gulls over the water, drawn above the trees and the palms
+  drawGulls(ctx, cam, gulls, state.time);
   drawLamps(ctx, cam, world);
 
   // the mission marker
@@ -701,6 +711,8 @@ function draw() {
     ctx.fillText('Press ENTER to try again', VIEW.width / 2, VIEW.height / 2 + 40);
     ctx.textAlign = 'left';
   }
+  // The pause shade goes on last, over the world and the HUD both.
+  if (state.paused && state.mode === 'play') drawPause(ctx);
 }
 
 // ---------------------------------------------------------------- the loop
@@ -709,6 +721,9 @@ let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
+  // P freezes the world where it stands; P again picks it back up. Only in play:
+  // the title card and the WASTED screen read their own keys.
+  if (state.mode === 'play' && input.wasPressed('KeyP')) state.paused = !state.paused;
   if (state.mode === 'over' && input.wasPressed('Enter')) {
     state.mode = 'play';
     state.health = WANTED.health;
@@ -719,6 +734,7 @@ function frame(now) {
     state.streak = 0;
     state.nitro = 1;
     state.horn = null;
+    state.paused = false;
     cops.length = 0;
     player.x = roadX(4) + 120;
     player.y = roadY(4) + 120;
@@ -743,6 +759,8 @@ if (shot && isShot(shot)) {
 /** Puts the game into a fixed pose for a screenshot. */
 function setupShot(kind) {
   state.mode = 'play';
+  // A pose is a still life: the world must never be frozen mid-pause in one.
+  state.paused = false;
   if (kind === 'start') {
     state.mode = 'title';
     // a vista from high over the southern beach, looking down the avenues with the

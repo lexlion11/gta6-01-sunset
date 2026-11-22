@@ -415,7 +415,7 @@ export function drawTitle(ctx, time) {
   ctx.fillText('PRESS ENTER TO START', cx, 650);
   ctx.font = '14px "DejaVu Sans", sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,0.75)';
-  ctx.fillText('WASD to move   -   mouse to aim   -   click to fire   -   F for a car   -   H for the horn   -   E for the phone', cx, 682);
+  ctx.fillText('WASD to move   -   mouse to aim   -   click to fire   -   F for a car   -   H for the horn   -   E for the phone   -   P to pause', cx, 682);
   ctx.textAlign = 'left';
 }
 
@@ -476,5 +476,23 @@ export function drawFloatText(ctx, cam, item) {
   ctx.fillStyle = item.color ?? COLORS.money;
   ctx.textAlign = 'center';
   ctx.fillText(item.text, p.x, p.y - (item.rise ?? 0));
+  ctx.textAlign = 'left';
+}
+
+/**
+ * The pause overlay: the world freezes exactly where it stands, the HUD stays
+ * readable underneath the shade, and P is the only key that matters while it is
+ * up. Drawn last, over everything but the frame itself.
+ */
+export function drawPause(ctx) {
+  ctx.fillStyle = 'rgba(8,10,18,0.55)';
+  ctx.fillRect(0, 0, VIEW.width, VIEW.height);
+  ctx.font = 'bold 58px "DejaVu Sans", sans-serif';
+  ctx.fillStyle = COLORS.text;
+  ctx.textAlign = 'center';
+  ctx.fillText('PAUSED', VIEW.width / 2, VIEW.height / 2 - 8);
+  ctx.font = 'bold 18px "DejaVu Sans", sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.78)';
+  ctx.fillText('Press P to pick the game back up', VIEW.width / 2, VIEW.height / 2 + 30);
   ctx.textAlign = 'left';
 }

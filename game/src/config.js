@@ -60,6 +60,8 @@ export const COLORS = {
   stallAwning: '#d95a5a',
   bin: '#4a5058',
   planter: '#4e7a3a',
+  // the gulls that work the shoreline
+  gull: '#f4f0e4',
 };
 
 export const PHYSICS = {
@@ -84,6 +86,12 @@ export const PHYSICS = {
   copConfuse: 1.6,
   // A traffic car that hears the horn brakes for a moment.
   trafficPanic: 0.9,
+  // The nitro tank: how many seconds of boost a full tank holds, and how many
+  // seconds of idling it takes to win back one second of boost. These used to be
+  // hardcoded in the update loop; they live here now so the tank can be tuned
+  // without hunting for the arithmetic.
+  nitroDrain: 0.4,
+  nitroRefill: 0.06,
 };
 
 export const WANTED = {
@@ -105,6 +113,14 @@ export const TRAFFIC = {
 export const NIGHT = {
   tint: 'rgba(34,26,72,0.16)',
   vignette: 0.30,
+};
+
+// The gulls that circle the shoreline: how many there are and how wide each one
+// sweeps. They are pure atmosphere - no collision, no gameplay - but the coast
+// feels empty without them.
+export const GULLS = {
+  count: 14,
+  radius: 190,
 };
 
 // The speedometer gauge in the corner of the HUD.

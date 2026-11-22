@@ -1,7 +1,8 @@
-// The people and the traffic of Sunset City: pedestrians that walk the pavements and
-// run from trouble, cars that drive the road grid, and the police that chase the player.
+// The people, the traffic and the gulls of Sunset City: pedestrians that walk the
+// pavements and run from trouble, cars that drive the road grid, the police that
+// chase the player, and the seabirds that work the shoreline.
 
-import { PHYSICS, COLORS, CITY } from './config.js';
+import { PHYSICS, COLORS, CITY, GULLS } from './config.js';
 import { makeCar, stepCar, overlaps } from './vehicles.js';
 import { roadX, roadY } from './world.js';
 
@@ -38,8 +39,12 @@ export function spawnPedestrians(world, count) {
   return peds;
 }
 
-/** Move a pedestrian for dt. */
-export function stepPed(ped, dt, target, player, danger) {
+/**
+ * Move a pedestrian for dt. `maxY`, when given, is the line the pedestrian may
+ * not cross: the city passes the top of the sand so a fleeing pedestrian keeps
+ * its feet dry instead of running into the sea.
+ */
+export function stepPed(ped, dt, target, player, danger, maxY) {
   ped.walkPhase += dt * (ped.state === 'flee' ? 14 : 7);
   let tx = target.x;
   let ty = target.y;
@@ -64,6 +69,11 @@ export function stepPed(ped, dt, target, player, danger) {
   }
   ped.x += ped.vx * dt;
   ped.y += ped.vy * dt;
+  if (maxY !== undefined && ped.y > maxY) {
+    // Walked off the beach into the surf: turn it around and send it back.
+    ped.y = maxY;
+    ped.vy = -Math.abs(ped.vy) - 20;
+  }
 
   if (danger) {
     ped.state = 'flee';
@@ -128,13 +138,6 @@ export function stepTraffic(car, dt, world) {
   let throttle = ai.cruise;
   if (ai.panic > 0) throttle = -0.5;
 
-  // slow down for whatever is in front
-  const ahead = lookAhead(car, 120);
-  if (ahead) {
-    const gap = ahead.gap;
-    if (gap < 90) throttle = -0.4;
-    else if (gap < 150) throttle = 0.15;
-  }
   // stay inside the world
   if (car.x < 60 || car.x > world.width - 60 || car.y < 60 || car.y > world.sandTop - 20) {
     throttle = -0.3;
@@ -143,13 +146,6 @@ export function stepTraffic(car, dt, world) {
   void roadX;
   void roadY;
   return car;
-}
-
-/** What is in front of a car, if anything. */
-function lookAhead(car, dist) {
-  const dx = Math.cos(car.angle) * dist;
-  const dy = Math.sin(car.angle) * dist;
-  return { x: car.x + dx, y: car.y + dy };
 }
 
 /**
@@ -208,6 +204,49 @@ export function confuseCop(car, seconds = PHYSICS.copConfuse) {
   if (!car.ai) return car;
   car.ai.confuse = Math.max(car.ai.confuse, seconds);
   return car;
+}
+
+/**
+ * A gull: it circles a point over the ocean, its eye level an flattened ellipse
+ * rather than a circle, and the circle's centre drifts slowly along the coast.
+ * Pure atmosphere - no collision, no gameplay.
+ */
+export function makeGull(world) {
+  return {
+    cx: Math.random() * world.width,
+    cy: world.oceanTop + 24 + Math.random() * (CITY.oceanHeight - 64),
+    angle: Math.random() * Math.PI * 2,
+    radius: GULLS.radius * (0.45 + Math.random() * 0.75),
+    speed: 0.4 + Math.random() * 0.5,
+    phase: Math.random() * 6,
+    drift: (Math.random() < 0.5 ? -1 : 1) * (6 + Math.random() * 12),
+  };
+}
+
+/** Spawn the gulls over the water. */
+export function spawnGulls(world, count) {
+  const gulls = [];
+  for (let i = 0; i < count; i++) gulls.push(makeGull(world));
+  return gulls;
+}
+
+/** Move the gulls for dt: each one circles its own patch and the patch wanders. */
+export function stepGulls(gulls, dt, world) {
+  for (const g of gulls) {
+    g.angle += g.speed * dt;
+    g.cx += g.drift * dt;
+    // The shoreline is a loop: a gull that flies off one end comes back at the other.
+    if (g.cx < -120) g.cx += world.width + 240;
+    if (g.cx > world.width + 120) g.cx -= world.width + 240;
+  }
+}
+
+/** Where a gull is at the moment, in world space. */
+export function gullPos(g) {
+  return {
+    x: g.cx + Math.cos(g.angle) * g.radius,
+    y: g.cy + Math.sin(g.angle) * g.radius * 0.4,
+  };
 }
 
 /** Whether a bullet hits a person. */
