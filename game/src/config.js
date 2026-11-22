@@ -1,61 +1,78 @@
-// Every tuning number and colour in one place. The playfield is a fixed 1280x720 logical area;
-// the renderer scales it to the window, so no rule below depends on the screen size.
+// Sunset City - tunables and palette. Everything the game draws comes from here or from
+// the world generator, so the whole look of the city is one file to read.
 
-export const FIELD = { width: 1280, height: 720, groundY: 664 };
+// The game's drawing surface. The screenshot pages render the canvas at exactly
+// this size, so a capture of the viewport is the game's own frame.
+export const VIEW = { width: 1280, height: 800 };
 
-/** The simulation's fixed step, in seconds: 60 updates a second whatever the display's rate. */
-export const STEP = 1 / 60;
-
-export const PLAYER = {
-  width: 72,
-  height: 24,
-  speed: 560,
-  invulnerable: 1.5,
+// The city is a grid of blocks separated by roads. On top of the grid sit a beach
+// (south edge) and the ocean beyond it.
+export const CITY = {
+  cols: 10,
+  rows: 10,
+  block: 420,       // buildable square of a block, before pavements
+  road: 116,        // width of a carriageway
+  pavement: 18,     // width of the sidewalk around each block
+  beachHeight: 300, // sand between the boardwalk and the water
+  oceanHeight: 300, // water strip at the south edge
+  boardwalk: 74,    // width of the timber boardwalk over the sand
 };
 
-export const LIVES = 3;
-
-export const BLOCK = {
-  minWidth: 40,
-  maxWidth: 110,
-  height: 36,
-  speed: 240,
-  speedPerLevel: 30,
-  speedJitter: 90,
-  interval: 0.55,
-  intervalScale: 0.88,
-  minInterval: 0.14,
-  dodgePoints: 1,
+export const COLORS = {
+  sky: '#ffd9a0',
+  dusk: '#7d5a9e',
+  asphalt: '#4a505c',
+  asphaltEdge: '#5b6270',
+  lane: '#f5e6b8',
+  pavement: '#cfc7b8',
+  pavementLine: '#aea596',
+  sand: '#f0dca8',
+  wetSand: '#ddc795',
+  ocean: '#2e86ab',
+  oceanDeep: '#17547a',
+  foam: '#e8f6fa',
+  grass: '#6bb05a',
+  grassDark: '#549245',
+  path: '#d9c69f',
+  water: '#3f95bd',
+  building: ['#a08b70', '#8a93a3', '#b5a184', '#7e8b9b', '#bfae8c', '#8d7f92'],
+  roof: ['#6a707a', '#75796f', '#5e5c68'],
+  window: '#ffd98a',
+  windowLit: '#fff3c4',
+  player: '#f2f2f2',
+  playerSkin: '#e8b98c',
+  ped: ['#e8c49c', '#d4a97c', '#f2d6b0', '#c99a6e'],
+  cop: '#2a52ad',
+  copDark: '#1b366f',
+  blood: '#a83232',
+  marker: '#ffd23f',
+  markerPulse: '#fff3a8',
+  hud: '#f4f1e8',
+  hudShade: 'rgba(12,14,20,0.72)',
+  text: '#f6f2e6',
+  money: '#8fe08a',
+  star: '#ffd23f',
+  starOff: 'rgba(255,255,255,0.22)',
 };
 
-export const COIN = {
-  size: 24,
-  speed: 190,
-  speedPerLevel: 14,
-  interval: 1.4,
-  intervalJitter: 0.8,
-  points: 10,
+export const PHYSICS = {
+  walkSpeed: 165,
+  runSpeed: 250,
+  bulletSpeed: 900,
+  bulletLife: 0.9,
+  pedFleeSpeed: 235,
+  pedWalkSpeed: 52,
+  copSpeed: 300,
+  // How long the heat stays up before it drops a star, and how long the police
+  // keep the player after that.
+  wantedDecay: 22,
+  // The escape job needs the heat to hold for its own length: the police do not
+  // cool off faster than the job they gave you.
+  wantedCooldown: 7,
 };
 
-/** Seconds of play per level, and the last level: speeds and spawn rates stop growing there. */
-export const LEVEL = { seconds: 12, max: 12 };
-
-/** How many falling things can exist at once; the pool is allocated once, at boot. */
-export const POOL_SIZE = 64;
-
-export const PALETTE = {
-  backdrop: '#11141b',
-  sky: '#1b1f2a',
-  ground: '#2a3040',
-  player: '#4fc3f7',
-  block: '#e5534b',
-  coin: '#f2c94c',
-  panel: '#252b38',
-  text: '#eef1f5',
-  muted: '#8b93a3',
+export const WANTED = {
+  max: 5,
+  copsPerStar: 2,
+  health: 100,
 };
-
-export const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
-
-/** Where the best score is kept between visits (this browser only). */
-export const BEST_KEY = 'block-dodger.best';

@@ -1,0 +1,9 @@
+# The build's output directory: main.ts writes game/, screenshots/ and dossier.json here.
+out/
+
+# The capture script's throwaway Chrome profile.
+shots-src/.chrome-profile/
+
+# Node's own noise.
+node_modules/
+*.log
