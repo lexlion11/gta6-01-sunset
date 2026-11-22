@@ -1,5 +1,6 @@
 // The city of Sunset City, generated once and then walked around in.
-// A road grid with pavements, buildings, parks, a boardwalk, a beach and the ocean.
+// A road grid with pavements, buildings, parks, street props, a boardwalk, a beach
+// and the ocean.
 
 import { CITY, COLORS } from './config.js';
 import { makeRandom } from './random.js';
@@ -46,6 +47,7 @@ export function buildWorld(seed = 20261124) {
   const lamps = [];
   const trees = [];
   const palms = [];
+  const props = [];
 
   for (let r = 0; r < CITY.rows; r++) {
     for (let c = 0; c < CITY.cols; c++) {
@@ -103,6 +105,41 @@ export function buildWorld(seed = 20261124) {
     }
   }
 
+  // Street props: benches, hydrants, bins, planters and a food stall here and
+  // there. They sit on the pavement, never on the carriageway, so the traffic has
+  // room to pass.
+  const propKinds = [
+    { kind: 'bench', weight: 3, color: COLORS.bench },
+    { kind: 'hydrant', weight: 2, color: COLORS.hydrant },
+    { kind: 'bin', weight: 2, color: COLORS.bin },
+    { kind: 'planter', weight: 2, color: COLORS.planter },
+    { kind: 'stall', weight: 1, color: COLORS.stall },
+  ];
+  for (let r = 0; r < CITY.rows; r++) {
+    for (let c = 0; c < CITY.cols; c++) {
+      const count = rand.int(0, 3);
+      for (let i = 0; i < count; i++) {
+        const kind = rand.weighted(propKinds.map((p) => [p.kind, p.weight]));
+        if (!kind) continue;
+        // along the north edge of the block, or the west edge
+        const alongNorth = rand.chance(0.6);
+        const px = alongNorth
+          ? roadX(c) + CITY.road + rand.range(24, CITY.block - 24)
+          : roadX(c) + CITY.road + rand.range(4, 14);
+        const py = alongNorth
+          ? roadY(r) + CITY.road + rand.range(4, 14)
+          : roadY(r) + CITY.road + rand.range(24, CITY.block - 24);
+        props.push({
+          kind,
+          x: px,
+          y: py,
+          color: rand.pick(COLORS.building),
+          angle: alongNorth ? 0 : Math.PI / 2,
+        });
+      }
+    }
+  }
+
   // The boardwalk runs along the top of the beach, with palms and the job phone on it.
   const boardwalkY = WORLD.height - CITY.oceanHeight - CITY.beachHeight;
   const boardwalk = {
@@ -129,7 +166,20 @@ export function buildWorld(seed = 20261124) {
     { name: 'Sunset Pier', x: WORLD.width * 0.22, y: boardwalkY - 60 },
     { name: 'Neon Square', x: roadX(4) + CITY.road + 210, y: roadY(3) + CITY.road + 210 },
     { name: 'Park Gate', x: roadX(6) + CITY.road + 90, y: roadY(5) + CITY.road + 90 },
+    { name: 'Garage Row', x: roadX(8) + CITY.road + 250, y: roadY(6) + CITY.road + 120 },
   ];
+
+  // The stash the heist job points at: a cash case behind the pier shed.
+  const stash = {
+    x: WORLD.width * 0.22 + 130,
+    y: boardwalkY - 40,
+    taken: false,
+  };
+  // The safe house the heist escape job wants the player to reach.
+  const safehouse = {
+    x: roadX(1) + CITY.road + 120,
+    y: roadY(1) + CITY.road + 120,
+  };
 
   return {
     seed,
@@ -139,8 +189,11 @@ export function buildWorld(seed = 20261124) {
     lamps,
     trees,
     palms,
+    props,
     boardwalk,
     phone,
+    stash,
+    safehouse,
     landmarks,
     // The world's own size: the camera clamps to it and the minimap scales by it.
     width: WORLD.width,

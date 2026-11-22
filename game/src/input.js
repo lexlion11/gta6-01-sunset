@@ -48,6 +48,10 @@ export function createInput(canvas) {
     mouse,
     isDown: (code) => keys.has(code),
     wasPressed: (code) => pressed.has(code),
+    /** True while any of the given codes is held down. */
+    anyDown: (codes) => codes.some((c) => keys.has(c)),
+    /** True on the frame any of the given codes was first pressed. */
+    anyPressed: (codes) => codes.some((c) => pressed.has(c)),
     endFrame() {
       pressed.clear();
       mouse.clicked = false;
@@ -64,5 +68,11 @@ export const KEYS = {
   fire: ['Space'],
   enter: ['KeyF'],
   action: ['KeyE'],
+  // The horn: it scatters the pedestrians, panics the traffic and puts a police
+  // car off the road for a moment.
   horn: ['KeyH'],
+  // The handbrake: it locks the wheels so the car slides into the corner.
+  handbrake: ['KeyC'],
+  // Look behind: the camera swings round to the back of the car.
+  lookBack: ['KeyB'],
 };

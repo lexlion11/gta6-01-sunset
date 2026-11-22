@@ -2,12 +2,14 @@
 // objective the player has to finish before the next one appears.
 
 import { WORLD } from './world.js';
+import { HEIST } from './config.js';
 
 export const JOB_KINDS = {
   DELIVER: 'deliver',
   CHECKPOINT: 'checkpoint',
   ESCAPE: 'escape',
   HIT: 'hit',
+  HEIST: 'heist',
 };
 
 /** A job the phone can offer. */
@@ -56,6 +58,22 @@ function makeJob(kind, index, world) {
       done: false,
     };
   }
+  if (kind === JOB_KINDS.HEIST) {
+    // The heist has two halves: lift the case from the stash on foot, then drive
+    // it out of the city in the getaway car waiting at the safe house.
+    return {
+      kind,
+      title: 'Lift the case',
+      detail: 'Take the cash case from behind the pier, then drive it to the safe house',
+      phase: 'lift',
+      marker: { x: world.stash.x, y: world.stash.y },
+      stash: world.stash,
+      safehouse: world.safehouse,
+      carId: 'getaway',
+      reward: 2600 + index * 200,
+      done: false,
+    };
+  }
   const l = world.landmarks[(index + 2) % world.landmarks.length];
   return {
     kind,
@@ -74,6 +92,7 @@ export function createJobBoard(world) {
     JOB_KINDS.CHECKPOINT,
     JOB_KINDS.HIT,
     JOB_KINDS.ESCAPE,
+    JOB_KINDS.HEIST,
   ];
   let index = 0;
   return {
@@ -93,6 +112,9 @@ export function createJobBoard(world) {
 export function markerOf(job) {
   if (!job) return null;
   if (job.kind === JOB_KINDS.CHECKPOINT) return job.checkpoints[job.index] ?? null;
+  if (job.kind === JOB_KINDS.HEIST) {
+    return job.phase === 'lift' ? job.marker : { x: job.safehouse.x, y: job.safehouse.y };
+  }
   return job.marker ?? null;
 }
 
@@ -123,6 +145,29 @@ export function checkJob(job, state) {
     }
     return false;
   }
+  if (job.kind === JOB_KINDS.HEIST) {
+    if (job.phase === 'lift') {
+      const dx = state.playerX - job.stash.x;
+      const dy = state.playerY - job.stash.y;
+      // The case has to be lifted on foot: the alarm is wired to the door.
+      if (dx * dx + dy * dy < HEIST.reach * HEIST.reach && !state.inCar) {
+        job.phase = 'escape';
+        job.stash.taken = true;
+        job.detail = 'Drive the Nightjar to the safe house';
+        job.marker = { x: job.safehouse.x, y: job.safehouse.y };
+      }
+      return false;
+    }
+    // The second half: the getaway car has to be at the safe house.
+    const dx = state.playerX - job.safehouse.x;
+    const dy = state.playerY - job.safehouse.y;
+    const reach = HEIST.getawayReach;
+    if (dx * dx + dy * dy < reach * reach && state.inTargetCar) {
+      job.done = true;
+      return true;
+    }
+    return false;
+  }
   const m = job.marker;
   if (!m) return false;
   const dx = state.playerX - m.x;
@@ -142,7 +187,24 @@ export function objectiveText(job) {
   if (job.kind === JOB_KINDS.CHECKPOINT) {
     return { title: job.title, sub: `Checkpoint ${job.index + 1} of ${job.checkpoints.length} - ${job.detail}` };
   }
+  if (job.kind === JOB_KINDS.HEIST) {
+    if (job.phase === 'lift') return { title: job.title, sub: 'On foot: the case is behind the pier' };
+    return { title: 'Run the case', sub: 'Get in the Nightjar and reach the safe house' };
+  }
   return { title: job.title, sub: job.detail };
+}
+
+/**
+ * The bonus for finishing a job without a scratch: the payout grows with the
+ * streak of clean jobs, and the cap keeps it sane.
+ */
+export function completionBonus(job, streak, health, wanted) {
+  if (!job) return 0;
+  let bonus = 0;
+  if (health >= 90) bonus += 150;
+  if (wanted === 0) bonus += 250;
+  bonus += Math.min(3, Math.max(0, streak - 1)) * 200;
+  return bonus;
 }
 
 /** The world bounds helper for a random point on a road. */

@@ -5,7 +5,12 @@
 <title>Sunset City - taking a job on the boardwalk</title>
 <style>
   html, body { margin: 0; padding: 0; background: #14161f; overflow: hidden; }
+  /* The canvas is 1280x800 and the page is exactly that big, so a capture of the
+     page's viewport is the game's own frame with nothing cropped and nothing added. */
   #game { position: absolute; top: 0; left: 0; width: 1280px; height: 800px; display: block; }
+  /* The phone on the boardwalk blinks on a timer, so the page waits for the
+     canvas to have painted before the picture is taken. */
+  body { background: #14161f; }
 </style>
 </head>
 <body>

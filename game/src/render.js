@@ -1,12 +1,12 @@
 // All the drawing. Everything is a canvas primitive: rectangles, circles, paths and
 // gradients, no image files at all.
 
-import { COLORS, VIEW, CITY } from './config.js';
+import { COLORS, VIEW, CITY, NIGHT } from './config.js';
 import { TILES, tileAt, lotRect } from './world.js';
 
 /** The camera: where it looks and how big a pixel is on screen. */
 export function createCamera() {
-  return { x: 0, y: 0, zoom: 1, shake: 0, targetX: 0, targetY: 0 };
+  return { x: 0, y: 0, zoom: 1, shake: 0, targetX: 0, targetY: 0, flip: false };
 }
 
 export function updateCamera(cam, tx, ty, dt, world) {
@@ -23,9 +23,14 @@ export function updateCamera(cam, tx, ty, dt, world) {
   void follow;
 }
 
+/**
+ * The world point on the screen. When the camera is flipped (the player is
+ * looking over their shoulder), the x axis runs the other way.
+ */
 export function worldToScreen(cam, x, y) {
   const z = safeZoom(cam);
-  const sx = (x - cam.x) * z + VIEW.width / 2;
+  const dx = cam.flip ? cam.x - x : x - cam.x;
+  const sx = dx * z + VIEW.width / 2;
   const sy = (y - cam.y) * z + VIEW.height / 2;
   return { x: sx, y: sy };
 }
@@ -37,8 +42,9 @@ function safeZoom(cam) {
 
 export function screenToWorld(cam, sx, sy) {
   const z = safeZoom(cam);
+  const dx = (sx - VIEW.width / 2) / z;
   return {
-    x: (sx - VIEW.width / 2) / z + cam.x,
+    x: cam.flip ? cam.x - dx : cam.x + dx,
     y: (sy - VIEW.height / 2) / z + cam.y,
   };
 }
@@ -204,6 +210,7 @@ export function drawGround(ctx, cam, world) {
       }
     }
   }
+  void v;
 }
 
 function roadXWorld(c) {
@@ -319,6 +326,58 @@ export function drawFoliage(ctx, cam, world) {
   }
 }
 
+/**
+ * The street props: benches, hydrants, bins, planters and the food stall. They
+ * give the pavements a bit of life without costing a file of assets.
+ */
+export function drawProps(ctx, cam, world) {
+  const v = viewRect(cam, world);
+  for (const prop of world.props) {
+    if (prop.x < v.x0 - 40 || prop.x > v.x1 + 40 || prop.y < v.y0 - 40 || prop.y > v.y1 + 40) continue;
+    const p = worldToScreen(cam, prop.x, prop.y);
+    const s = safeZoom(cam);
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(prop.angle ?? 0);
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.beginPath();
+    ctx.ellipse(2 * s, 3 * s, 9 * s, 4 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+    if (prop.kind === 'bench') {
+      ctx.fillStyle = COLORS.bench;
+      ctx.fillRect(-10 * s, -4 * s, 20 * s, 8 * s);
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      ctx.fillRect(-10 * s, 0, 20 * s, 2 * s);
+    } else if (prop.kind === 'hydrant') {
+      ctx.fillStyle = COLORS.hydrant;
+      ctx.fillRect(-3 * s, -9 * s, 6 * s, 11 * s);
+      ctx.fillRect(-5 * s, -6 * s, 10 * s, 3 * s);
+    } else if (prop.kind === 'bin') {
+      ctx.fillStyle = COLORS.bin;
+      ctx.fillRect(-5 * s, -10 * s, 10 * s, 12 * s);
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.fillRect(-5 * s, -10 * s, 10 * s, 3 * s);
+    } else if (prop.kind === 'planter') {
+      ctx.fillStyle = '#6b5a45';
+      ctx.fillRect(-7 * s, -7 * s, 14 * s, 9 * s);
+      ctx.fillStyle = COLORS.planter;
+      ctx.beginPath();
+      ctx.arc(0, -8 * s, 6 * s, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (prop.kind === 'stall') {
+      ctx.fillStyle = COLORS.stall;
+      ctx.fillRect(-13 * s, -10 * s, 26 * s, 14 * s);
+      ctx.fillStyle = COLORS.stallAwning;
+      ctx.fillRect(-15 * s, -16 * s, 30 * s, 7 * s);
+      ctx.fillStyle = 'rgba(255,255,255,0.22)';
+      for (let i = 0; i < 5; i++) {
+        ctx.fillRect(-15 * s + i * 6 * s, -16 * s, 3 * s, 7 * s);
+      }
+    }
+    ctx.restore();
+  }
+}
+
 /** A person: legs, torso, head. Drawn upright whatever the facing. */
 export function drawPerson(ctx, cam, p, colors) {
   const s = safeZoom(cam);
@@ -410,6 +469,24 @@ export function drawCar(ctx, cam, car, opts = {}) {
     const flash = Math.floor(opts.time * 8) % 2 === 0;
     ctx.fillStyle = flash ? '#ff4444' : '#4488ff';
     ctx.fillRect(-w * 0.10, -h * 0.18, w * 0.22, h * 0.36);
+    // the light bar throws a pool of colour on the road
+    if (flash) {
+      const g = ctx.createRadialGradient(0, 0, 2, 0, 0, 26 * s);
+      g.addColorStop(0, 'rgba(255,68,68,0.35)');
+      g.addColorStop(1, 'rgba(255,68,68,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(0, 0, 26 * s, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  // The nitro flame out of the back of a boosted car.
+  if (opts.boost) {
+    const flick = 0.6 + 0.4 * Math.sin((opts.time ?? 0) * 40);
+    ctx.fillStyle = 'rgba(150,110,255,0.85)';
+    ctx.fillRect(-w * 0.62, -h * 0.16, w * 0.16 * flick, h * 0.32);
+    ctx.fillStyle = 'rgba(220,200,255,0.75)';
+    ctx.fillRect(-w * 0.58, -h * 0.08, w * 0.08 * flick, h * 0.16);
   }
   ctx.restore();
 }
@@ -459,6 +536,63 @@ export function drawPhone(ctx, cam, world, time) {
   ctx.fillRect(p.x - 5 * s, p.y - 23 * s, 10 * s, 16 * s);
   ctx.fillStyle = '#2c3852';
   ctx.fillRect(p.x - 9 * s, p.y - 28 * s, 18 * s, 4 * s);
+}
+
+/**
+ * The cash case of the heist: a small box on the sand with a warm glow around
+ * it, so the player can tell it apart from the street.
+ */
+export function drawStash(ctx, cam, world, time) {
+  if (world.stash.taken) return;
+  const p = worldToScreen(cam, world.stash.x, world.stash.y);
+  const s = safeZoom(cam);
+  const pulse = 0.5 + 0.5 * Math.sin(time * 3);
+  const g = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, 34 * s);
+  g.addColorStop(0, `rgba(255,214,120,${0.35 + pulse * 0.2})`);
+  g.addColorStop(1, 'rgba(255,214,120,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, 34 * s, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#20242c';
+  ctx.fillRect(p.x - 7 * s, p.y - 5 * s, 14 * s, 10 * s);
+  ctx.fillStyle = '#d8b46a';
+  ctx.fillRect(p.x - 7 * s, p.y - 1.5 * s, 14 * s, 3 * s);
+  ctx.fillStyle = '#8fe08a';
+  ctx.fillRect(p.x - 1.5 * s, p.y - 5 * s, 3 * s, 10 * s);
+}
+
+/**
+ * The rings of the horn: they spread out from the car that honked.
+ */
+export function drawHorn(ctx, cam, horn) {
+  const s = safeZoom(cam);
+  for (const ring of horn.rings) {
+    const p = worldToScreen(cam, ring.x, ring.y);
+    const r = ring.radius * s;
+    ctx.strokeStyle = `rgba(255,240,180,${Math.max(0, ring.alpha * 0.8)})`;
+    ctx.lineWidth = 2.5 * s;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+/**
+ * The dusk tint and the vignette that lie over the whole picture, so the city
+ * reads as evening rather than noon.
+ */
+export function drawNightTint(ctx) {
+  ctx.fillStyle = NIGHT.tint;
+  ctx.fillRect(0, 0, VIEW.width, VIEW.height);
+  const g = ctx.createRadialGradient(
+    VIEW.width / 2, VIEW.height / 2, VIEW.height * 0.35,
+    VIEW.width / 2, VIEW.height / 2, VIEW.height * 0.85,
+  );
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, `rgba(8,6,18,${NIGHT.vignette})`);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, VIEW.width, VIEW.height);
 }
 
 /** Street lamps: a pole and a warm pool of light. */

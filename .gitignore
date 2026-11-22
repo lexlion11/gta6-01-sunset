@@ -7,3 +7,8 @@ shots-src/.chrome-profile/
 # Node's own noise.
 node_modules/
 *.log
+
+# The editor's swap and backup files.
+*.swp
+*~
+.DS_Store

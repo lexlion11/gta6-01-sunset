@@ -1,5 +1,6 @@
-// The cars of Sunset City. Four families with distinct speed and handling, plus the
-// police cruiser and the heavy van the missions use.
+// The cars of Sunset City. Six families with distinct speed and handling, plus the
+// police cruiser, the heavy van the missions use and the getaway car the heist
+// leaves waiting at the drop-off.
 
 export const CAR_TYPES = [
   {
@@ -51,6 +52,15 @@ export const CAR_TYPES = [
     mass: 1.05,
     police: true,
   },
+  {
+    id: 'getaway',
+    name: 'Nightjar Getaway',
+    w: 38, h: 18,
+    accel: 560, topSpeed: 510, brake: 620, turn: 2.7, grip: 0.9,
+    body: '#2b2436', roof: '#12101a',
+    mass: 1.1,
+    getaway: true,
+  },
 ];
 
 export function carType(id) {
@@ -70,6 +80,9 @@ export function makeCar(typeId, x, y, angle = 0) {
     occupant: null,
     siren: false,
     ai: null,
+    // The nitro the player has left in this car, and the slip of the wheels.
+    nitro: 1,
+    slip: 0,
   };
 }
 
@@ -77,31 +90,40 @@ export function makeCar(typeId, x, y, angle = 0) {
  * Advances a car's motion by dt. throttle is -1..1, steerInput is -1..1.
  * The car accelerates along its heading, loses speed to drag, and turns harder the
  * faster it goes.
+ *
+ * opts.handbrake locks the wheels: the car keeps its speed but loses grip and
+ * slides, so it can be turned sideways into a corner.
+ * opts.boost adds a burst of thrust on top of the normal acceleration.
  */
-export function stepCar(car, dt, throttle, steerInput) {
+export function stepCar(car, dt, throttle, steerInput, opts = {}) {
   const t = car.type;
   const maxSpeed = t.topSpeed;
+  const boost = opts.boost ? 1.55 : 1;
   if (throttle > 0) {
-    car.speed += t.accel * throttle * dt / t.mass;
+    car.speed += t.accel * throttle * boost * dt / t.mass;
   } else if (throttle < 0) {
     if (car.speed > 0) car.speed -= t.brake * dt;
     else car.speed -= t.accel * 0.6 * dt / t.mass;
   }
   // drag and the top speed
   car.speed -= car.speed * 0.55 * dt;
-  if (car.speed > maxSpeed) car.speed = maxSpeed;
+  if (car.speed > maxSpeed * (opts.boost ? 1.15 : 1)) car.speed = maxSpeed * (opts.boost ? 1.15 : 1);
   if (car.speed < -maxSpeed * 0.4) car.speed = -maxSpeed * 0.4;
 
   // steering scales with speed, so a parked car does not spin
-  const grip = t.grip;
+  const grip = opts.handbrake ? t.grip * 0.45 : t.grip;
   const steerPower = t.turn * (0.35 + Math.min(1, Math.abs(car.speed) / 220) * 0.65);
   car.steer += (steerInput - car.steer) * Math.min(1, dt * 8);
   car.angle += car.steer * steerPower * dt * Math.sign(car.speed || 1) * (car.speed < 0 ? -1 : 1);
 
   const dx = Math.cos(car.angle) * car.speed * dt;
   const dy = Math.sin(car.angle) * car.speed * dt;
-  car.x += dx * grip + Math.cos(car.angle) * car.speed * dt * (1 - grip);
-  car.y += dy * grip + Math.sin(car.angle) * car.speed * dt * (1 - grip);
+  // The grip part of the movement follows the heading, the rest slides sideways:
+  // with the handbrake on, that sideways part grows and the car drifts.
+  const slide = 1 - grip;
+  car.slip = Math.abs(car.speed) * slide * (opts.handbrake ? 2.2 : 1);
+  car.x += dx * grip + Math.cos(car.angle) * car.speed * dt * slide;
+  car.y += dy * grip + Math.sin(car.angle) * car.speed * dt * slide;
   return car;
 }
 
@@ -124,4 +146,17 @@ export function overlaps(ax, ay, ar, bx, by, br) {
   const dy = ay - by;
   const r = ar + br;
   return dx * dx + dy * dy <= r * r;
+}
+
+/**
+ * The speed of a car in the units the speedometer shows, and a short word for
+ * what the car is doing, so the HUD can colour the dial.
+ */
+export function speedReadout(car) {
+  const speed = car ? Math.abs(car.speed) : 0;
+  let label = 'IDLE';
+  if (speed > 40) label = 'CRUISE';
+  if (speed > 160) label = 'FAST';
+  if (speed > 300) label = 'REDLINE';
+  return { speed, label };
 }

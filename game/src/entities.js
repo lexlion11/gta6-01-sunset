@@ -81,6 +81,9 @@ export function makeTrafficCar(x, y, angle, typeId) {
     turnTimer: 1 + Math.random() * 2,
     lane: Math.random() < 0.5 ? -1 : 1,
     cruise: 0.7 + Math.random() * 0.35,
+    // How long this car has been stalled by a horn, and where it wants to go.
+    panic: 0,
+    swerve: 0,
   };
   car.type = { ...car.type };
   car.speed = car.type.topSpeed * 0.35;
@@ -91,7 +94,7 @@ export function makeTrafficCar(x, y, angle, typeId) {
 export function stepTraffic(car, dt, world) {
   const ai = car.ai;
   ai.turnTimer -= dt;
-  const ahead = lookAhead(car, 120);
+  if (ai.panic > 0) ai.panic -= dt;
   let steer = 0;
   const cell = 420 + 116;
 
@@ -121,8 +124,12 @@ export function stepTraffic(car, dt, world) {
   const cross = dirX * offY - dirY * offX;
   steer = Math.max(-1, Math.min(1, cross / 30));
 
-  // slow down for whatever is in front
+  // A car that has just been honked at brakes and pulls to the side.
   let throttle = ai.cruise;
+  if (ai.panic > 0) throttle = -0.5;
+
+  // slow down for whatever is in front
+  const ahead = lookAhead(car, 120);
   if (ahead) {
     const gap = ahead.gap;
     if (gap < 90) throttle = -0.4;
@@ -145,16 +152,39 @@ function lookAhead(car, dist) {
   return { x: car.x + dx, y: car.y + dy };
 }
 
+/**
+ * Startles a traffic car: it brakes and drifts towards the kerb for a moment.
+ * Returns the car so the caller can chain the call.
+ */
+export function panicTraffic(car, seconds = PHYSICS.trafficPanic) {
+  if (!car.ai) return car;
+  car.ai.panic = Math.max(car.ai.panic, seconds);
+  return car;
+}
+
 /** The police: they chase the player and try to ram them. */
 export function makeCop(x, y) {
   const car = makeCar('police', x, y, 0);
   car.siren = true;
-  car.ai = { turnTimer: 0 };
+  car.ai = { turnTimer: 0, confuse: 0, ram: Math.random() < 0.5 };
   return car;
 }
 
-/** Drive a police car towards a target. */
+/**
+ * Drive a police car towards a target.
+ *
+ * A police car that has been honked at loses the player for a moment: it brakes
+ * and spins its wheels before it picks the chase up again.
+ */
 export function stepCop(car, dt, target) {
+  const ai = car.ai;
+  if (ai.confuse > 0) {
+    // Confused: the car sits still with the siren on, waiting for the player to
+    // show up again.
+    ai.confuse -= dt;
+    stepCar(car, dt, -0.6, ai.ram ? 1 : -1);
+    return car;
+  }
   const dx = target.x - car.x;
   const dy = target.y - car.y;
   const want = Math.atan2(dy, dx);
@@ -164,7 +194,19 @@ export function stepCop(car, dt, target) {
   const steer = Math.max(-1, Math.min(1, diff * 1.8));
   let throttle = 1;
   if (Math.abs(diff) > 1.4) throttle = 0.35;
+  // A ramming car closes in harder and brakes later than a careful one.
+  if (ai.ram) {
+    const dist = Math.hypot(dx, dy);
+    if (dist < 90) throttle = 1.2;
+  }
   stepCar(car, dt, throttle, steer);
+  return car;
+}
+
+/** Confuses a police car for a moment, so it loses the player. */
+export function confuseCop(car, seconds = PHYSICS.copConfuse) {
+  if (!car.ai) return car;
+  car.ai.confuse = Math.max(car.ai.confuse, seconds);
   return car;
 }
 

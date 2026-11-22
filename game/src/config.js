@@ -53,6 +53,13 @@ export const COLORS = {
   money: '#8fe08a',
   star: '#ffd23f',
   starOff: 'rgba(255,255,255,0.22)',
+  // street props
+  bench: '#8a6a45',
+  hydrant: '#c8443c',
+  stall: '#e8b04a',
+  stallAwning: '#d95a5a',
+  bin: '#4a5058',
+  planter: '#4e7a3a',
 };
 
 export const PHYSICS = {
@@ -69,10 +76,47 @@ export const PHYSICS = {
   // The escape job needs the heat to hold for its own length: the police do not
   // cool off faster than the job they gave you.
   wantedCooldown: 7,
+  // The horn: how far it carries, how long it takes to sound again, and how long
+  // a police car stays confused after it is honked at.
+  hornRadius: 340,
+  hornCooldown: 1.1,
+  hornLife: 0.85,
+  copConfuse: 1.6,
+  // A traffic car that hears the horn brakes for a moment.
+  trafficPanic: 0.9,
 };
 
 export const WANTED = {
   max: 5,
   copsPerStar: 2,
   health: 100,
+};
+
+// How busy the streets are. The counts are tunables so the city can be made
+// quieter or busier without touching the code that spawns things.
+export const TRAFFIC = {
+  density: 30,       // NPC cars driving the grid
+  parked: 18,        // cars parked on the pavement, waiting to be stolen
+  pedestrians: 70,   // people on the pavements
+  scatter: 150,      // how far a honk throws the pedestrians and the traffic
+};
+
+// The dusk tint that lies over the whole city, and the vignette around the edges.
+export const NIGHT = {
+  tint: 'rgba(34,26,72,0.16)',
+  vignette: 0.30,
+};
+
+// The speedometer gauge in the corner of the HUD.
+export const SPEEDOMETER = {
+  radius: 74,
+  max: 500,          // world units per second at the far end of the dial
+};
+
+// The heist: robbing a stash sets the alarm off, and the job pays a bonus for
+// the clean getaway.
+export const HEIST = {
+  alarmWanted: 1,
+  reach: 62,
+  getawayReach: 76,
 };

@@ -1,6 +1,7 @@
-// The heads-up display: objective, minimap, health, wanted stars and money.
+// The heads-up display: objective, minimap, health, wanted stars, money, the
+// speedometer and the title card.
 
-import { COLORS, VIEW, WANTED, CITY } from './config.js';
+import { COLORS, VIEW, WANTED, CITY, SPEEDOMETER } from './config.js';
 import { worldToScreen } from './render.js';
 
 function panel(ctx, x, y, w, h, r = 10) {
@@ -75,6 +76,91 @@ export function drawStatus(ctx, health, wanted, money, flash) {
   ctx.fillText(`$${money}`, x + w - 16 - ctx.measureText(`$${money}`).width, y + 36);
 }
 
+/**
+ * The speedometer: a dial in the bottom-right corner with a needle that follows
+ * the speed of the car. It is drawn over the minimap, so the minimap moves left.
+ */
+export function drawSpeedometer(ctx, speed, label, nitro) {
+  const r = SPEEDOMETER.radius;
+  const cx = VIEW.width - r - 26;
+  const cy = VIEW.height - r - 26;
+
+  // the dial face
+  ctx.fillStyle = 'rgba(12,14,20,0.78)';
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // the ticks around the dial, with the red line at the top speed
+  const start = Math.PI * 0.75;
+  const sweep = Math.PI * 1.5;
+  for (let i = 0; i <= 10; i++) {
+    const a = start + (sweep * i) / 10;
+    const red = i >= 8;
+    ctx.strokeStyle = red ? 'rgba(255,90,90,0.9)' : 'rgba(255,255,255,0.45)';
+    ctx.lineWidth = red ? 2.5 : 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * (r - 12), cy + Math.sin(a) * (r - 12));
+    ctx.lineTo(cx + Math.cos(a) * (r - 4), cy + Math.sin(a) * (r - 4));
+    ctx.stroke();
+  }
+
+  // the arc of the speed, filled in
+  const frac = Math.max(0, Math.min(1, speed / SPEEDOMETER.max));
+  const needleAngle = start + sweep * frac;
+  ctx.strokeStyle = frac > 0.8 ? '#ff6b6b' : frac > 0.55 ? '#ffc24a' : '#6fd3ff';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r - 18, start, needleAngle);
+  ctx.stroke();
+
+  // the needle
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(needleAngle);
+  ctx.fillStyle = '#f6f2e6';
+  ctx.beginPath();
+  ctx.moveTo(-6, 0);
+  ctx.lineTo(r - 20, -2.2);
+  ctx.lineTo(r - 20, 2.2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  // the hub
+  ctx.fillStyle = '#f6f2e6';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 4.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // the readout in the middle of the dial
+  ctx.font = 'bold 22px "DejaVu Sans", sans-serif';
+  ctx.fillStyle = COLORS.text;
+  ctx.textAlign = 'center';
+  ctx.fillText(String(Math.round(speed)), cx, cy + 32);
+  ctx.font = 'bold 9px "DejaVu Sans", sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.fillText(label, cx, cy + 44);
+
+  // the nitro bar under the dial
+  if (nitro !== undefined) {
+    const barW = 88;
+    const bx = cx - barW / 2;
+    const by = cy + r - 18;
+    ctx.fillStyle = 'rgba(255,255,255,0.16)';
+    ctx.fillRect(bx, by, barW, 6);
+    ctx.fillStyle = '#8f7bff';
+    ctx.fillRect(bx, by, barW * Math.max(0, Math.min(1, nitro)), 6);
+    ctx.font = 'bold 8px "DejaVu Sans", sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText('NITRO', cx, by - 4);
+  }
+  ctx.textAlign = 'left';
+}
+
 /** One wanted star. */
 function drawStar(ctx, cx, cy, r, color) {
   ctx.fillStyle = color;
@@ -91,9 +177,13 @@ function drawStar(ctx, cx, cy, r, color) {
   ctx.fill();
 }
 
-/** The minimap, bottom right. */
-export function drawMinimap(ctx, cam, world, marks, size = 190) {
-  const x = VIEW.width - size - 18;
+/**
+ * The minimap, bottom right. `inset` is how far the map has to move away from
+ * the right edge: the speedometer sits in that corner while the player is
+ * driving, so the map steps aside for it.
+ */
+export function drawMinimap(ctx, cam, world, marks, size = 190, inset = 0) {
+  const x = VIEW.width - size - 18 - inset;
   const y = VIEW.height - size - 18;
   panel(ctx, x, y, size, size, 12);
 
@@ -325,7 +415,7 @@ export function drawTitle(ctx, time) {
   ctx.fillText('PRESS ENTER TO START', cx, 650);
   ctx.font = '14px "DejaVu Sans", sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,0.75)';
-  ctx.fillText('WASD / arrows to move   -   mouse to aim   -   click to fire   -   F to enter a car   -   E for the phone on the boardwalk', cx, 682);
+  ctx.fillText('WASD to move   -   mouse to aim   -   click to fire   -   F for a car   -   H for the horn   -   E for the phone', cx, 682);
   ctx.textAlign = 'left';
 }
 
@@ -362,6 +452,21 @@ export function drawToast(ctx, toast, time) {
   ctx.fillText(toast.text, VIEW.width / 2, 150);
   ctx.textAlign = 'left';
   ctx.globalAlpha = 1;
+}
+
+/**
+ * The streak card: it appears next to the objective when the player has finished
+ * jobs in a row without losing the heat.
+ */
+export function drawStreak(ctx, streak, bonus) {
+  if (!streak || streak < 2) return;
+  panel(ctx, 18, 96, 214, 42);
+  ctx.font = 'bold 12px "DejaVu Sans", sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.fillText('CLEAN STREAK', 32, 112);
+  ctx.font = 'bold 17px "DejaVu Sans", sans-serif';
+  ctx.fillStyle = COLORS.money;
+  ctx.fillText(`${streak} jobs  +$${bonus}`, 32, 130);
 }
 
 /** The money helper on screen, drawn in world space above a car. */

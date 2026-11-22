@@ -1,24 +1,26 @@
 // Sunset City: the game itself. A 2D top-down open-world crime game drawn with
 // canvas primitives, with no library, no build step and no network request.
 
-import { VIEW, COLORS, PHYSICS, WANTED } from './config.js';
+import { VIEW, COLORS, PHYSICS, WANTED, TRAFFIC, HEIST } from './config.js';
 import { createInput, KEYS } from './input.js';
 import { buildWorld, roadX, roadY, tileAt, TILES } from './world.js';
 import {
   createCamera, updateCamera, worldToScreen, screenToWorld,
-  drawSky, drawGround, drawBoardwalk, drawBuildings, drawFoliage,
+  drawSky, drawGround, drawBoardwalk, drawBuildings, drawFoliage, drawProps,
   drawCar, drawPerson, drawBullet, drawMarker, drawPhone, drawLamps,
+  drawStash, drawHorn, drawNightTint,
 } from './render.js';
 import {
-  drawObjective, drawStatus, drawMinimap, drawTitle, drawBanner, drawToast, drawFloatText, drawTitleScene,
+  drawObjective, drawStatus, drawMinimap, drawTitle, drawBanner, drawToast,
+  drawFloatText, drawTitleScene, drawSpeedometer, drawStreak,
 } from './hud.js';
-import { makeCar, stepCar, carType, overlaps } from './vehicles.js';
+import { makeCar, stepCar, carType, overlaps, speedReadout } from './vehicles.js';
 import {
   spawnPedestrians, stepPed, makeTrafficCar, stepTraffic, makeCop, stepCop,
-  bulletHitsPerson, bulletHitsCar,
+  bulletHitsPerson, bulletHitsCar, panicTraffic, confuseCop,
 } from './entities.js';
 import {
-  createJobBoard, markerOf, checkJob, objectiveText, JOB_KINDS,
+  createJobBoard, markerOf, checkJob, objectiveText, JOB_KINDS, completionBonus,
 } from './missions.js';
 import { isShot } from './shots.js';
 
@@ -49,6 +51,13 @@ const state = {
   jobActive: false,
   phoneUsed: false,
   message: '',
+  streak: 0,           // jobs finished in a row without being caught
+  lastBonus: 0,
+  horn: null,          // the ringing of the horn, if it is still going
+  nitro: 1,            // the player's own boost, refilled slowly
+  boosting: false,
+  lookBack: false,
+  chase: 0,            // how long the police have been on the tail
 };
 
 const player = {
@@ -62,7 +71,7 @@ const player = {
   fireCooldown: 0,
 };
 
-const peds = spawnPedestrians(world, 70);
+const peds = spawnPedestrians(world, TRAFFIC.pedestrians);
 const traffic = [];
 const cops = [];
 const bullets = [];
@@ -72,7 +81,7 @@ const TRAFFIC_TYPES = ['compact', 'coupe', 'taxi', 'muscle', 'van'];
 
 // A handful of parked cars near the pavements to steal.
 function seedParkedCars() {
-  for (let i = 0; i < 18; i++) {
+  for (let i = 0; i < TRAFFIC.parked; i++) {
     const c = 1 + Math.floor(Math.random() * 9);
     const r = 1 + Math.floor(Math.random() * 9);
     const cell = 420 + 116;
@@ -87,7 +96,7 @@ function seedParkedCars() {
 seedParkedCars();
 
 function seedTraffic() {
-  for (let i = 0; i < 26; i++) {
+  for (let i = 0; i < TRAFFIC.density; i++) {
     const c = Math.floor(Math.random() * 11);
     const r = Math.floor(Math.random() * 11);
     const cell = 420 + 116;
@@ -172,8 +181,63 @@ function raiseWanted(by = 1) {
 /** Drop the wanted level back to zero. */
 function clearWanted() {
   state.wanted = 0;
-  cops.length = 0;
+  state.chase = 0;
   banner('You lost the police', '#8fe08a', 2.5);
+}
+
+// ---------------------------------------------------------------- the horn
+
+/**
+ * The horn: it scatters the pedestrians, panics the traffic and puts a police car
+ * off the road for a moment. It is the cheapest way out of a tight squeeze.
+ */
+function honk() {
+  if (state.horn && state.time - state.horn.at < PHYSICS.hornCooldown) return;
+  const car = state.inCar;
+  const x = car ? car.x : player.x;
+  const y = car ? car.y : player.y;
+  state.horn = { at: state.time, x, y, rings: [{ x, y, radius: 10, alpha: 1 }] };
+  banner('HONK!', '#ffd23f', 1);
+
+  // the pedestrians scatter
+  for (const p of peds) {
+    if (Math.hypot(p.x - x, p.y - y) > PHYSICS.hornRadius) continue;
+    p.state = 'flee';
+    p.fleeTimer = 4;
+  }
+  // the traffic brakes
+  for (const t of traffic) {
+    if (Math.hypot(t.x - x, t.y - y) > PHYSICS.hornRadius) continue;
+    panicTraffic(t);
+  }
+  // a police car that is close enough loses the player for a moment
+  for (const cop of cops) {
+    if (Math.hypot(cop.x - x, cop.y - y) > PHYSICS.hornRadius) continue;
+    confuseCop(cop);
+  }
+}
+
+/** The horn rings spread out and fade. */
+function updateHorn(dt) {
+  const horn = state.horn;
+  if (!horn) return;
+  const age = state.time - horn.at;
+  if (age > PHYSICS.hornLife) {
+    state.horn = null;
+    return;
+  }
+  horn.rings.length = 0;
+  const count = 3;
+  for (let i = 0; i < count; i++) {
+    const t = (age / PHYSICS.hornLife) * count - i;
+    if (t < 0 || t > 1) continue;
+    horn.rings.push({
+      x: horn.x,
+      y: horn.y,
+      radius: 12 + t * PHYSICS.hornRadius,
+      alpha: (1 - t) * (1 - age / PHYSICS.hornLife),
+    });
+  }
 }
 
 // ---------------------------------------------------------------- shooting
@@ -215,16 +279,27 @@ function startJob() {
   if (job.kind === JOB_KINDS.ESCAPE) {
     raiseWanted(2);
   }
+  if (job.kind === JOB_KINDS.HEIST) {
+    // The getaway car waits at the safe house, and the alarm goes off as soon as
+    // the case is lifted.
+    const car = makeCar(job.carId, world.safehouse.x + 40, world.safehouse.y + 30, 0);
+    parkedCars.push(car);
+    raiseWanted(HEIST.alarmWanted);
+    banner('The Nightjar is waiting at the safe house', '#8f7bff', 4);
+  }
 }
 
 /** Finish the current job and pay out. */
 function completeJob() {
   const job = state.job;
   if (!job) return;
-  state.money += job.reward;
-  floatText(player.x, player.y - 20, `+$${job.reward}`, COLORS.money);
-  toast(`Job done! +$${job.reward}`);
-  banner(`JOB COMPLETE - +$${job.reward}`, '#8fe08a', 3.5);
+  const bonus = completionBonus(job, state.streak, state.health, state.wanted);
+  state.money += job.reward + bonus;
+  state.streak += 1;
+  state.lastBonus = bonus;
+  floatText(player.x, player.y - 20, `+$${job.reward + bonus}`, COLORS.money);
+  toast(`Job done! +$${job.reward}${bonus ? ` (+$${bonus} bonus)` : ''}`);
+  banner(`JOB COMPLETE - +$${job.reward + bonus}`, '#8fe08a', 3.5);
   jobBoard.advance();
   state.job = null;
   state.jobActive = false;
@@ -236,6 +311,7 @@ function completeJob() {
 function update(dt) {
   state.time += dt;
   state.flash = Math.max(0, state.flash - dt * 2);
+  updateHorn(dt);
 
   if (state.mode === 'title') {
     if (input.wasPressed('Enter') || input.mouse.clicked) {
@@ -246,23 +322,40 @@ function update(dt) {
     return;
   }
 
-  const m = input.mouse;
-  const mouseWorld = screenToWorld(cam, m.x, m.y);
-  input.mouse.worldX = mouseWorld.x;
-  input.mouse.worldY = mouseWorld.y;
-
   // movement keys
   const up = KEYS.up.some((k) => input.isDown(k));
   const down = KEYS.down.some((k) => input.isDown(k));
   const left = KEYS.left.some((k) => input.isDown(k));
   const right = KEYS.right.some((k) => input.isDown(k));
   const running = KEYS.run.some((k) => input.isDown(k));
+  const handbrake = KEYS.handbrake.some((k) => input.isDown(k));
+  state.lookBack = KEYS.lookBack.some((k) => input.isDown(k));
+  // Looking over the shoulder flips the world left to right, so the flip has to
+  // be settled before anything reads the mouse in world space.
+  cam.flip = state.lookBack;
+
+  const m = input.mouse;
+  const mouseWorld = screenToWorld(cam, m.x, m.y);
+  input.mouse.worldX = mouseWorld.x;
+  input.mouse.worldY = mouseWorld.y;
 
   if (state.inCar) {
     const car = state.inCar;
     const throttle = (up ? 1 : 0) + (down ? -1 : 0);
-    const steer = (right ? 1 : 0) + (left ? -1 : 0);
-    stepCar(car, dt, throttle, steer);
+    const steer = (right ? 1 : 0) + (left ? 1 : 0);
+    // The nitro: a burst of thrust that burns the tank down and refills itself
+    // slowly while the car is not boosting. It needs the car to be moving or
+    // accelerating, so it cannot be used to creep forward from a standstill.
+    const wantsBoost = KEYS.fire.some((k) => input.isDown(k))
+      && state.nitro > 0.02
+      && (throttle > 0 || car.speed > 60);
+    state.boosting = wantsBoost;
+    if (wantsBoost) {
+      state.nitro = Math.max(0, state.nitro - dt * 0.4);
+    } else {
+      state.nitro = Math.min(1, state.nitro + dt * 0.06);
+    }
+    stepCar(car, dt, throttle, steer, { handbrake, boost: wantsBoost });
     // stay on the map
     car.x = Math.max(20, Math.min(world.width - 20, car.x));
     car.y = Math.max(20, Math.min(world.sandTop - 10, car.y));
@@ -271,9 +364,7 @@ function update(dt) {
     player.angle = car.angle;
     if (input.wasPressed('KeyF') || input.wasPressed('KeyE')) exitCar();
     // the horn startles the traffic
-    if (input.wasPressed('KeyH')) {
-      for (const p of peds) p.state = 'flee';
-    }
+    if (input.wasPressed('KeyH')) honk();
     // running people over hurts them, and the cops notice
     for (const p of peds) {
       if (overlaps(car.x, car.y, car.radius, p.x, p.y, p.radius)) {
@@ -325,6 +416,8 @@ function update(dt) {
     // was down for a moment even if the loop never saw it held.
     if (m.clicked) fire();
     if (input.wasPressed('KeyF')) tryEnterCar();
+    // The horn works on foot too: it just only scatters the pedestrians.
+    if (input.wasPressed('KeyH')) honk();
   }
 
   // The player walks the whole land: the streets, the boardwalk and the sand down
@@ -453,7 +546,7 @@ function update(dt) {
     cops.push(cop);
   }
 
-  // the phone
+  // The phone
   if (!state.jobActive && Math.hypot(player.x - world.phone.x, player.y - world.phone.y) < 46) {
     if (input.wasPressed('KeyE') || input.wasPressed('KeyF')) startJob();
     else if (!state.phoneUsed) banner('Press E to take a job from the phone', '#6fd3ff', 1.5);
@@ -492,6 +585,8 @@ function update(dt) {
     banner('WASTED', '#ff6b6b', 6);
   }
 
+  // Looking over the shoulder flips the world left to right.
+  cam.flip = state.lookBack;
   updateCamera(cam, player.x, player.y, dt, world);
 }
 
@@ -513,6 +608,7 @@ function draw() {
   drawGround(ctx, cam, world);
   drawBoardwalk(ctx, cam, world);
   drawBuildings(ctx, cam, world, state.time);
+  drawProps(ctx, cam, world);
   drawFoliage(ctx, cam, world);
   drawLamps(ctx, cam, world);
 
@@ -523,6 +619,9 @@ function draw() {
     if (m) drawMarker(ctx, cam, m, state.time);
   }
 
+  // the cash case of the heist
+  drawStash(ctx, cam, world, state.time);
+
   // parked cars
   for (const car of parkedCars) drawCar(ctx, cam, car, { time: state.time });
   // traffic
@@ -531,7 +630,9 @@ function draw() {
   for (const cop of cops) drawCar(ctx, cam, cop, { time: state.time });
 
   // the player's car is drawn on top of the player
-  if (state.inCar) drawCar(ctx, cam, state.inCar, { time: state.time, selected: true });
+  if (state.inCar) {
+    drawCar(ctx, cam, state.inCar, { time: state.time, selected: true, boost: state.boosting });
+  }
 
   // pedestrians
   for (const p of peds) {
@@ -552,12 +653,20 @@ function draw() {
   // floating texts
   for (const f of state.floats) drawFloatText(ctx, cam, f);
 
+  // the rings of the horn
+  if (state.horn) drawHorn(ctx, cam, state.horn);
+
   ctx.restore();
+
+  // the dusk tint and the vignette over the whole picture: they lie on top of
+  // the world but under the HUD, so the readouts stay crisp.
+  drawNightTint(ctx);
 
   // the hud
   if (state.mode !== 'title') {
     const obj = state.job ? objectiveText(state.job) : objectiveText(null);
     drawObjective(ctx, obj.title, obj.sub);
+    drawStreak(ctx, state.streak, state.lastBonus);
     drawStatus(ctx, state.health, state.wanted, state.money, state.flash);
     const marks = [];
     if (state.job) {
@@ -565,7 +674,14 @@ function draw() {
       if (m) marks.push(m);
     }
     if (!state.jobActive) marks.push({ x: world.phone.x, y: world.phone.y, color: '#6fd3ff' });
-    drawMinimap(ctx, cam, world, marks);
+    // The speedometer takes the bottom-right corner while the player is
+    // driving, so the minimap steps aside for it.
+    drawMinimap(ctx, cam, world, marks, 190, state.inCar ? 176 : 0);
+    // the speedometer, only while the player is behind the wheel
+    if (state.inCar) {
+      const readout = speedReadout(state.inCar);
+      drawSpeedometer(ctx, readout.speed, readout.label, state.nitro);
+    }
     drawBanner(ctx, state.banner, state.time);
     drawToast(ctx, state.toast, state.time);
   }
@@ -600,6 +716,9 @@ function frame(now) {
     state.money = 250;
     state.job = null;
     state.jobActive = false;
+    state.streak = 0;
+    state.nitro = 1;
+    state.horn = null;
     cops.length = 0;
     player.x = roadX(4) + 120;
     player.y = roadY(4) + 120;
@@ -678,6 +797,8 @@ function setupShot(kind) {
     state.wanted = 3;
     state.money = 4820;
     state.health = 42;
+    state.nitro = 0.72;
+    car.speed = 240;
     for (let i = 0; i < 5; i++) {
       const cop = makeCop(car.x - 20 - i * 78, car.y + 34 - i * 14, -Math.PI / 2);
       cop.angle = -Math.PI / 2;
@@ -696,4 +817,4 @@ function setupShot(kind) {
   }
 }
 
-export { state, player, world, parkedCars, traffic, cops, peds, bullets };
+export { state, player, world, parkedCars, traffic, cops, peds, bullets, carType, tileAt, TILES };

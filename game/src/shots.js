@@ -21,7 +21,7 @@ export const SHOTS = {
   end: {
     name: '3-end',
     title: 'A police chase at three wanted stars',
-    note: 'police cars closing in on the player',
+    note: 'police cars closing in on the player, with the speedometer lit',
   },
 };
 

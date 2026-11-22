@@ -5,16 +5,17 @@
 // judge reads, with the vendored make.fun library.
 //
 // The game is Sunset City: an original top-down open-world crime caper in the spirit of the
-// genre - a procedural coastal city with a road grid, pavements, buildings, parks, a beach and
-// an ocean edge; on foot and behind the wheel; NPC traffic, pedestrians, a wanted level and
-// police chases; and a job system run from a phone on the boardwalk. Every pixel is drawn with
-// canvas primitives, so there is no asset to ship and nothing to download.
+// genre - a procedural coastal city with a road grid, pavements, buildings, parks, street
+// props, a beach and an ocean edge; on foot and behind the wheel; NPC traffic, pedestrians, a
+// wanted level and police chases; a horn that scatters the street; and a job system run from a
+// phone on the boardwalk, including a two-part heist. Every pixel is drawn with canvas
+// primitives, so there is no asset to ship and nothing to download.
 //
 // Serve it locally with `node serve.ts`, then open http://localhost:8080.
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 
-import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
@@ -23,6 +24,10 @@ const here = fileURLToPath(new URL('.', import.meta.url));
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
 mkdirSync(out, { recursive: true });
+// The old copy is cleared first, so a file that has been renamed or removed from
+// game/ does not survive in the output and inflate the entry.
+rmSync(join(out, 'game'), { recursive: true, force: true });
+rmSync(join(out, 'screenshots'), { recursive: true, force: true });
 cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });
 mkdirSync(join(out, 'screenshots'), { recursive: true });
 if (existsSync(join(here, 'screenshots'))) cpSync(join(here, 'screenshots'), join(out, 'screenshots'), { recursive: true });

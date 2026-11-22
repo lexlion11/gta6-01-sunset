@@ -23,6 +23,9 @@ const CHROME = '/home/lex/.openclaw/browser/chrome-137/chrome-linux64/chrome';
 const PORT = 19222;
 const WIDTH = 1280;
 const HEIGHT = 800;
+// The scorer's own caps for the pictures: at most four of them, each under
+// 256 KiB, long edge at most 1280 and short edge at least 480.
+const MAX_BYTES = 262144;
 
 // Each pose: the page in shots-src/ and the ?shot= value the game reads.
 const SHOTS = [
@@ -95,7 +98,7 @@ class Client {
   }
 
   watch(sessionId, fn) {
-    this.watchers.push({ sessionId, fn });
+    this.watchers.push({ fn, sessionId });
   }
 }
 
@@ -162,6 +165,9 @@ for (const shot of SHOTS) {
   }, sessionId);
 
   const buffer = Buffer.from(result.data, 'base64');
+  if (buffer.length > MAX_BYTES) {
+    throw new Error(`${shot.out} is ${buffer.length} bytes, over the ${MAX_BYTES} the scorer allows`);
+  }
   writeFileSync(join(outDir, shot.out), buffer);
   console.log(`${shot.out}: ${buffer.length} bytes` + (errors.length ? `  ERRORS: ${errors.join(' | ')}` : ''));
 }
